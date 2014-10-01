@@ -9,46 +9,46 @@
 module.exports = (function() {
   "use strict";
   var crypto = require("crypto"),
-      fs = require("fs"),
-      request = require("request"),
-      Promise = require("es6-promises"),
-      statusCodes = {
-        400: "Bad Request",
-        401: "Unauthorized",
-        402: "Payment Required",
-        403: "Forbidden",
-        404: "Not Found",
-        405: "Method Not Allowed",
-        406: "Not Acceptable",
-        407: "Proxy Authentication Required",
-        408: "Request Timeout",
-        409: "Conflict",
-        410: "Gone",
-        411: "Length Required",
-        412: "Precondition Failed",
-        413: "Request Entity Too Large",
-        414: "Request-URI Too Long",
-        415: "Unsupported Media Type",
-        416: "Requested Range Not Satisfiable",
-        417: "Expectation Failed",
-        428: "Precondition Required",
-        429: "Too Many Requests",
-        431: "Request Header Fields Too Large",
-        450: "Blocked By Windows Parental Controls",
-        499: "Client Closed Request",
-        500: "Internal Server Error",
-        501: "Not Implemented",
-        502: "Bad Gateway",
-        503: "Service Unavailable",
-        504: "Gateway Timeout",
-        505: "HTTP Version Not Supported",
-        506: "Variant Also Negotiates",
-        507: "Insufficient Storage",
-        508: "Loop Detected",
-        509: "Bandwidth Limit Exceeded",
-        510: "Not Extended",
-        511: "Network Authentication Required"
-      };
+    fs = require("fs"),
+    request = require("request"),
+    Promise = require("es6-promises"),
+    statusCodes = {
+      400: "Bad Request",
+      401: "Unauthorized",
+      402: "Payment Required",
+      403: "Forbidden",
+      404: "Not Found",
+      405: "Method Not Allowed",
+      406: "Not Acceptable",
+      407: "Proxy Authentication Required",
+      408: "Request Timeout",
+      409: "Conflict",
+      410: "Gone",
+      411: "Length Required",
+      412: "Precondition Failed",
+      413: "Request Entity Too Large",
+      414: "Request-URI Too Long",
+      415: "Unsupported Media Type",
+      416: "Requested Range Not Satisfiable",
+      417: "Expectation Failed",
+      428: "Precondition Required",
+      429: "Too Many Requests",
+      431: "Request Header Fields Too Large",
+      450: "Blocked By Windows Parental Controls",
+      499: "Client Closed Request",
+      500: "Internal Server Error",
+      501: "Not Implemented",
+      502: "Bad Gateway",
+      503: "Service Unavailable",
+      504: "Gateway Timeout",
+      505: "HTTP Version Not Supported",
+      506: "Variant Also Negotiates",
+      507: "Insufficient Storage",
+      508: "Loop Detected",
+      509: "Bandwidth Limit Exceeded",
+      510: "Not Extended",
+      511: "Network Authentication Required"
+    };
 
   /**
    * Pretty-print JSON files, because we will want
@@ -108,8 +108,8 @@ module.exports = (function() {
      */
     setAuthVals: function(options) {
       var timestamp = "" + Date.now(),
-          md5 = crypto.createHash('md5').update(timestamp).digest("hex"),
-          nonce = md5.substring(0,32);
+        md5 = crypto.createHash('md5').update(timestamp).digest("hex"),
+        nonce = md5.substring(0,32);
       options.oauth_timestamp = timestamp;
       options.oauth_nonce = nonce;
       return options;
@@ -121,9 +121,9 @@ module.exports = (function() {
      */
     formQueryString: function(queryArguments) {
       var args = [],
-          append = function(key) {
-            args.push(key + "=" + queryArguments[key]);
-          };
+        append = function(key) {
+          args.push(key + "=" + queryArguments[key]);
+        };
       Object.keys(queryArguments).sort().forEach(append);
       return args.join("&");
     },
@@ -140,8 +140,8 @@ module.exports = (function() {
      */
     parseRestResponse: function(body) {
       var constituents = body.split("&"),
-          response = {},
-          keyval;
+        response = {},
+        keyval;
       constituents.forEach(function(pair) {
         keyval = pair.split("=");
         response[keyval[0]] = keyval[1];
@@ -154,7 +154,7 @@ module.exports = (function() {
      */
     sign: function(data, key, secret) {
       var hmacKey = key + "&" + (secret ? secret : ''),
-          hmac = crypto.createHmac("SHA1", hmacKey);
+        hmac = crypto.createHmac("SHA1", hmacKey);
       hmac.update(data);
       var digest = hmac.digest("base64");
       return encodeURIComponent(digest);
@@ -213,9 +213,9 @@ module.exports = (function() {
 
       // code path for compiling the client-side JS library
       else if(typeof process.CLIENT_COMPILE !== "undefined") {
-       fn = function(callOptions, callback) {
-          if(callOptions && !callback) { callback = callOptions; callOptions = {}; }
-          if (!callback) { callback = function() {}; }
+        fn = function(callOptions, callback) {
+          if(typeof callOptions === 'function' && !callback) { callback = callOptions; callOptions = {}; }
+          if(!callback) { callback = function() {}; }
           var queryArguments = Utils.generateQueryArguments(method_name, this.flickrOptions, callOptions);
           return Utils.queryFlickr(queryArguments, this.flickrOptions, security, callback);
         };
@@ -224,8 +224,8 @@ module.exports = (function() {
       // server-side code path
       else {
         fn = function(callOptions, callback) {
-          if(callOptions && !callback) { callback = callOptions; callOptions = {}; }
-          if (!callback) { callback = function() {}; }
+          if(typeof callOptions === 'function' && !callback) { callback = callOptions; callOptions = {}; }
+          if(!callback) { callback = function() {}; }
           Utils.checkRequirements(method_name, required, callOptions, callback);
           var queryArguments = Utils.generateQueryArguments(method_name, flickrOptions, callOptions);
           return Utils.queryFlickr(queryArguments, flickrOptions, security, callback, errors);
@@ -248,6 +248,8 @@ module.exports = (function() {
      * Call the Flickr API
      */
     queryFlickr: function(queryArguments, flickrOptions, security, processResult, errors) {
+      var self = this;
+
       return new Promise(function(resolve, reject) {
         if(arguments.length === 3) {
           processResult = arguments[2];
@@ -259,7 +261,7 @@ module.exports = (function() {
 
         // do we need to HMAC-SHA1 sign this URL?
         if (authed) {
-          flickrOptions = this.setAuthVals(flickrOptions);
+          flickrOptions = self.setAuthVals(flickrOptions);
           queryArguments.oauth_nonce = flickrOptions.oauth_nonce;
           queryArguments.oauth_timestamp = flickrOptions.oauth_timestamp;
           queryArguments.oauth_consumer_key = flickrOptions.api_key;
@@ -276,9 +278,9 @@ module.exports = (function() {
         queryArguments.format = "json";
 
         var url = "https://api.flickr.com/services/rest/",
-          queryString = this.formQueryString(queryArguments),
-          data = this.formBaseString("GET", url, queryString),
-          signature = authed ? "&oauth_signature=" + this.sign(data, flickrOptions.secret, flickrOptions.access_token_secret) : '',
+          queryString = self.formQueryString(queryArguments),
+          data = self.formBaseString("GET", url, queryString),
+          signature = authed ? "&oauth_signature=" + self.sign(data, flickrOptions.secret, flickrOptions.access_token_secret) : '',
           flickrURL = url + "?" + queryString + signature;
 
         request.get(flickrURL, function(error, response, body) {
