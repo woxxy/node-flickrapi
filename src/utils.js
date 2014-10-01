@@ -11,7 +11,7 @@ module.exports = (function() {
   var crypto = require("crypto"),
     fs = require("fs"),
     request = require("request"),
-    Promise = require("es6-promises"),
+    Promise = require("es6-promises").Promise,
     statusCodes = {
       400: "Bad Request",
       401: "Unauthorized",
