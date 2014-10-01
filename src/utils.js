@@ -11,6 +11,7 @@ module.exports = (function() {
   var crypto = require("crypto"),
       fs = require("fs"),
       request = require("request"),
+      Promise = require("es6-promises"),
       statusCodes = {
         400: "Bad Request",
         401: "Unauthorized",
@@ -162,12 +163,14 @@ module.exports = (function() {
     /**
      * Validate an api call
      */
-    checkRequirements: function(method_name, required, callOptions, callback) {
+    checkRequirements: function(method_name, required, callOptions, callback, promise) {
       for(var r=0, last=required.length, arg; r<last; r++) {
         arg = required[r];
         if(arg.name === "api_key") continue;
         if(!callOptions.hasOwnProperty(arg.name)) {
-          return callback(new Error("missing required argument '"+arg.name+"' in call to "+method_name));
+          var error = new Error("missing required argument '"+arg.name+"' in call to "+method_name);
+          promise.reject(error);
+          return callback(error);
         }
       }
     },
@@ -202,7 +205,9 @@ module.exports = (function() {
       if(flickrOptions.tokenonly && security.needslogin===1) {
         fn = function(callOptions, callback) {
           if(callOptions && !callback) { callback = callOptions; callOptions = {}; }
-          callback("the "+method_name+" function requires authentication, and can only be called through an authenticated Flickr API instance.");
+          var error = "the "+method_name+" function requires authentication, and can only be called through an authenticated Flickr API instance.";
+          callback(error);
+          return Promise.reject(error);
         };
       }
 
@@ -210,8 +215,9 @@ module.exports = (function() {
       else if(typeof process.CLIENT_COMPILE !== "undefined") {
        fn = function(callOptions, callback) {
           if(callOptions && !callback) { callback = callOptions; callOptions = {}; }
+          if (!callback) { callback = function() {}; }
           var queryArguments = Utils.generateQueryArguments(method_name, this.flickrOptions, callOptions);
-          Utils.queryFlickr(queryArguments, this.flickrOptions, security, callback);
+          return Utils.queryFlickr(queryArguments, this.flickrOptions, security, callback);
         };
       }
 
@@ -219,9 +225,10 @@ module.exports = (function() {
       else {
         fn = function(callOptions, callback) {
           if(callOptions && !callback) { callback = callOptions; callOptions = {}; }
+          if (!callback) { callback = function() {}; }
           Utils.checkRequirements(method_name, required, callOptions, callback);
           var queryArguments = Utils.generateQueryArguments(method_name, flickrOptions, callOptions);
-          Utils.queryFlickr(queryArguments, flickrOptions, security, callback, errors);
+          return Utils.queryFlickr(queryArguments, flickrOptions, security, callback, errors);
         };
       }
 
@@ -241,70 +248,78 @@ module.exports = (function() {
      * Call the Flickr API
      */
     queryFlickr: function(queryArguments, flickrOptions, security, processResult, errors) {
+      return new Promise(function(resolve, reject) {
+        if(arguments.length === 3) {
+          processResult = arguments[2];
+          security = {};
+          errors = {};
+        }
 
-      if(arguments.length === 3) {
-        processResult = arguments[2];
-        security = {};
-        errors = {};
-      }
+        var authed = (security.needssigning === 1) || flickrOptions.force_auth;
 
-      var authed = (security.needssigning === 1) || flickrOptions.force_auth;
+        // do we need to HMAC-SHA1 sign this URL?
+        if (authed) {
+          flickrOptions = this.setAuthVals(flickrOptions);
+          queryArguments.oauth_nonce = flickrOptions.oauth_nonce;
+          queryArguments.oauth_timestamp = flickrOptions.oauth_timestamp;
+          queryArguments.oauth_consumer_key = flickrOptions.api_key;
+          queryArguments.oauth_token = flickrOptions.access_token;
+          queryArguments.oauth_signature_method = "HMAC-SHA1";
+        }
 
-      // do we need to HMAC-SHA1 sign this URL?
-      if (authed) {
-        flickrOptions = this.setAuthVals(flickrOptions);
-        queryArguments.oauth_nonce = flickrOptions.oauth_nonce;
-        queryArguments.oauth_timestamp = flickrOptions.oauth_timestamp;
-        queryArguments.oauth_consumer_key = flickrOptions.api_key;
-        queryArguments.oauth_token = flickrOptions.access_token;
-        queryArguments.oauth_signature_method = "HMAC-SHA1";
-      }
+        // nope - plain API key will suffice
+        else {
+          queryArguments.api_key = flickrOptions.api_key;
+        }
 
-      // nope - plain API key will suffice
-      else {
-        queryArguments.api_key = flickrOptions.api_key;
-      }
+        // force JSON request
+        queryArguments.format = "json";
 
-      // force JSON request
-      queryArguments.format = "json";
-
-      var url = "https://api.flickr.com/services/rest/",
+        var url = "https://api.flickr.com/services/rest/",
           queryString = this.formQueryString(queryArguments),
           data = this.formBaseString("GET", url, queryString),
           signature = authed ? "&oauth_signature=" + this.sign(data, flickrOptions.secret, flickrOptions.access_token_secret) : '',
           flickrURL = url + "?" + queryString + signature;
 
-      request.get(flickrURL, function(error, response, body) {
+        request.get(flickrURL, function(error, response, body) {
 
-        if(!response) {
-          error = "HTTP Error: no response for url [" + flickrURL + "]";
-          if (flickrOptions.retry_queries) {
-            return queryFlickr(queryArguments, flickrOptions, security, processResult, errors);
-          }
-          return processResult(error);
-        }
-
-        if(!body) {
-          error = "HTTP Error " + response.statusCode + " (" + statusCodes[response.statusCode] + ")";
-          return processResult(error);
-        }
-
-        // we can transform the error into something more
-        // indicative if "errors" is an array of known errors
-        // for this specific method call.
-        if(!error) {
-          try {
-            body = body.replace(/^jsonFlickrApi\(/,'').replace(/\}\)$/,'}');
-            body = JSON.parse(body);
-            if(body.stat !== "ok") {
-              return processResult(new Error(body.message));
+          if(!response) {
+            error = "HTTP Error: no response for url [" + flickrURL + "]";
+            if (flickrOptions.retry_queries) {
+              return queryFlickr(queryArguments, flickrOptions, security, processResult, errors);
             }
-          } catch (e) {
-            return processResult("could not parse body as JSON: " + body);
+            reject(error);
+            return processResult(error);
           }
-        }
 
-        processResult(false, body);
+          if(!body) {
+            error = "HTTP Error " + response.statusCode + " (" + statusCodes[response.statusCode] + ")";
+            reject(error);
+            return processResult(error);
+          }
+
+          // we can transform the error into something more
+          // indicative if "errors" is an array of known errors
+          // for this specific method call.
+          if(!error) {
+            try {
+              body = body.replace(/^jsonFlickrApi\(/,'').replace(/\}\)$/,'}');
+              body = JSON.parse(body);
+              if(body.stat !== "ok") {
+                error = new Error(body.message);
+                reject(error);
+                return processResult(error);
+              }
+            } catch (e) {
+              error = "could not parse body as JSON: " + body;
+              reject(error);
+              return processResult(error);
+            }
+          }
+
+          resolve(body);
+          processResult(false, body);
+        });
       });
     },
 
